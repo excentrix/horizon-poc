@@ -1,205 +1,192 @@
-# backend/src/chains/horizon_chat.py
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langchain_core.tools import tool
-from langchain_core.utils.function_calling import convert_to_openai_function
-from typing import Dict, List, Optional, Any
-import os
+# backend/src/chains/horizon_chat.py (completely rewrite)
+from typing import Dict, List, Optional, Any, AsyncGenerator
 import json
-from datetime import datetime, timedelta
 import asyncio
-from dotenv import load_dotenv
+from datetime import datetime
 
-load_dotenv()
-
-# Define extraction schemas as tools
-@tool
-def extract_user_facts(
-    degree: Optional[str] = None,
-    year: Optional[int] = None,
-    goal: Optional[str] = None,
-    biggest_worry: Optional[str] = None,
-    fav_subject: Optional[str] = None,
-    skills: Optional[List[str]] = None,
-    gpa: Optional[float] = None
-) -> Dict[str, Any]:
-    """Extract and update user profile information from conversation."""
-    return {
-        "type": "profile_update",
-        "data": {
-            "degree": degree,
-            "year": year,
-            "goal": goal,
-            "biggest_worry": biggest_worry,
-            "fav_subject": fav_subject,
-            "skills": skills,
-            "gpa": gpa
-        }
-    }
-
-@tool
-def create_learning_task(
-    title: str,
-    description: str,
-    priority: str = "medium",
-    due_days: int = 7
-) -> Dict[str, Any]:
-    """Create a learning task for the user."""
-    due_date = datetime.utcnow() + timedelta(days=due_days)
-    return {
-        "type": "task_creation",
-        "data": {
-            "title": title,
-            "description": description,
-            "priority": priority,
-            "due_date": due_date.isoformat()
-        }
-    }
-
-@tool
-def summarize_session(
-    summary: str,
-    key_topics: List[str],
-    next_steps: List[str]
-) -> Dict[str, Any]:
-    """Summarize the current chat session."""
-    return {
-        "type": "session_summary",
-        "data": {
-            "summary": summary,
-            "key_topics": key_topics,
-            "next_steps": next_steps
-        }
-    }
+from ai.fact_extraction import FactExtractionPipeline, FactExtractionResult
+from ai.task_creation import TaskCreationEngine, TaskCreationResult
+from ai.context_aware_generator import ContextAwareGenerator
 
 class HorizonChatChain:
     def __init__(self):
-        self.llm = AzureChatOpenAI(
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_key=os.getenv("AZURE_OPENAI_KEY"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-            deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-            temperature=0.7,
-            streaming=True,
-        )
-        
-        # Bind tools to LLM
-        self.tools = [extract_user_facts, create_learning_task, summarize_session]
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-        
-    def _build_system_prompt(self, user_context: Dict = None) -> str:
-        """Build dynamic system prompt based on user context."""
-        base_prompt = """You are Horizon, an AI learning mentor designed to help students achieve their academic and career goals.
-
-Your personality:
-- Encouraging and supportive, never judgmental
-- Practical and action-oriented
-- Knowledgeable about education and career paths
-- Empathetic to student struggles and anxieties
-
-Your capabilities:
-1. **Profile Building**: Extract key information about the user's background, goals, and concerns
-2. **Learning Guidance**: Provide personalized advice based on their profile
-3. **Task Creation**: Suggest specific, actionable learning tasks
-4. **Progress Tracking**: Help users stay motivated and on track
-
-Core principles:
-- Always be specific and actionable in your advice
-- Break down complex goals into manageable steps
-- Acknowledge emotions and provide encouragement
-- Use the user's context to personalize responses
-- Create tasks that are realistic and time-bound
-"""
-        
-        if user_context:
-            context_str = f"\nCurrent user context:\n{json.dumps(user_context, indent=2)}"
-            base_prompt += context_str
-            
-        base_prompt += "\n\nRemember to use your tools to extract facts, create tasks, and summarize sessions when appropriate."
-        
-        return base_prompt
+        self.fact_extractor = FactExtractionPipeline()
+        self.task_creator = TaskCreationEngine()
+        self.response_generator = ContextAwareGenerator()
+        print("✅ Enhanced Horizon Chat Chain initialized")
     
     async def chat_stream(
-        self, 
-        message: str, 
-        user_context: Dict = None,
-        conversation_history: List[Dict] = None
-    ):
-        """Stream chat response with function calling."""
+        self,
+        message: str,
+        user_context: Dict[str, Any] = None,
+        conversation_history: List[Dict[str, str]] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Enhanced chat stream with parallel fact extraction, task creation, and context-aware responses.
+        """
         
-        # Build messages
-        messages = [
-            SystemMessage(content=self._build_system_prompt(user_context))
-        ]
+        if not user_context:
+            user_context = {}
         
-        # Add conversation history
-        if conversation_history:
-            for msg in conversation_history[-10:]:  # Last 10 messages for context
-                if msg['is_user']:
-                    messages.append(HumanMessage(content=msg['content']))
-                else:
-                    messages.append(AIMessage(content=msg['content']))
+        if not conversation_history:
+            conversation_history = []
         
-        # Add current message
-        messages.append(HumanMessage(content=message))
-        
-        # Stream response
-        response_content = ""
-        tool_calls = []
-        
-        async for chunk in self.llm_with_tools.astream(messages):
-            if chunk.content:
-                response_content += chunk.content
+        try:
+            print(f"🤖 Processing message: {message[:50]}...")
+            
+            # Step 1: Start parallel processing
+            print("🔄 Starting parallel AI analysis...")
+            
+            # Run fact extraction and initial analysis in parallel
+            fact_extraction_task = asyncio.create_task(
+                self.fact_extractor.extract_facts(message, user_context, conversation_history)
+            )
+            
+            # Step 2: Get fact extraction results
+            yield {
+                "type": "processing_update",
+                "data": {"message": "Analyzing your message..."}
+            }
+            
+            fact_result: FactExtractionResult = await fact_extraction_task
+            print(f"✅ Fact extraction complete. Found {len(fact_result.facts)} facts")
+            
+            # Step 3: Stream fact updates if any facts were found
+            if fact_result.facts:
+                print("📊 Streaming fact updates...")
+                
+                # Send fact updates
+                fact_updates = {}
+                for fact in fact_result.facts:
+                    # Convert fact to database format
+                    if fact.field == "skills" and isinstance(fact.value, list):
+                        fact_updates[fact.field] = json.dumps(fact.value)
+                    else:
+                        fact_updates[fact.field] = fact.value
+                
                 yield {
-                    "type": "token",
-                    "data": chunk.content
+                    "type": "facts_update",
+                    "data": fact_updates
+                }
+                
+                # Show visual feedback for fact discovery
+                yield {
+                    "type": "fact_discovery",
+                    "data": {
+                        "facts_discovered": len(fact_result.facts),
+                        "facts": [
+                            {
+                                "field": fact.field,
+                                "value": fact.value,
+                                "confidence": fact.confidence
+                            }
+                            for fact in fact_result.facts
+                        ]
+                    }
                 }
             
-            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                tool_calls.extend(chunk.tool_calls)
-        
-        # Process tool calls
-        extracted_facts = {}
-        created_tasks = []
-        session_summary = None
-        
-        for tool_call in tool_calls:
-            try:
-                if tool_call['name'] == 'extract_user_facts':
-                    result = extract_user_facts.invoke(tool_call['args'])
-                    extracted_facts = result['data']
-                    yield {
-                        "type": "facts_update",
-                        "data": extracted_facts
-                    }
+            # Step 4: Analyze for task creation
+            print("📋 Analyzing for task creation...")
+            
+            task_result: TaskCreationResult = await self.task_creator.analyze_for_tasks(
+                message, 
+                user_context, 
+                fact_result.user_intent, 
+                fact_result.emotional_state,
+                conversation_history
+            )
+            
+            print(f"✅ Task analysis complete. Should create tasks: {task_result.should_create_tasks}")
+            
+            # Step 5: Create tasks if recommended
+            if task_result.should_create_tasks and task_result.tasks:
+                print(f"📝 Creating {len(task_result.tasks)} tasks...")
                 
-                elif tool_call['name'] == 'create_learning_task':
-                    result = create_learning_task.invoke(tool_call['args'])
-                    created_tasks.append(result['data'])
+                for task in task_result.tasks:
+                    # Convert relative date to actual date
+                    due_date = None
+                    if task.due_date_suggestion:
+                        due_date = self.task_creator._parse_relative_date(task.due_date_suggestion)
+                    
                     yield {
                         "type": "task_created",
-                        "data": result['data']
+                        "data": {
+                            "title": task.title,
+                            "description": task.description,
+                            "priority": task.priority,
+                            "due_date": due_date.isoformat() if due_date else None,
+                            "category": task.category,
+                            "confidence": task.confidence,
+                            "reasoning": task.reasoning
+                        }
                     }
-                
-                elif tool_call['name'] == 'summarize_session':
-                    result = summarize_session.invoke(tool_call['args'])
-                    session_summary = result['data']
-                    yield {
-                        "type": "session_summary",
-                        "data": session_summary
-                    }
-                    
-            except Exception as e:
-                print(f"Tool call error: {e}")
-                continue
-        
-        # Final response metadata
-        yield {
-            "type": "response_complete",
-            "data": {
-                "content": response_content,
-                "facts_extracted": extracted_facts,
-                "tasks_created": created_tasks,
-                "session_summary": session_summary
+            
+            # Step 6: Generate context-aware response
+            print("💬 Generating context-aware response...")
+            
+            yield {
+                "type": "processing_update",
+                "data": {"message": "Crafting personalized response..."}
             }
-        }
+            
+            # Generate enhanced response with all context
+            response = await self.response_generator.generate_contextual_response(
+                message,
+                user_context,
+                fact_result.facts,
+                fact_result.user_intent,
+                fact_result.emotional_state,
+                conversation_history
+            )
+            
+            print(f"✅ Response generated: {len(response)} characters")
+            
+            # Step 7: Stream response tokens
+            # Simulate streaming for visual effect (in production, use actual streaming)
+            words = response.split()
+            current_response = ""
+            
+            for i, word in enumerate(words):
+                current_response += word + " "
+                
+                yield {
+                    "type": "token",
+                    "data": word + " "
+                }
+                
+                # Add small delay for realistic streaming effect
+                if i % 3 == 0:  # Every 3 words
+                    await asyncio.sleep(0.05)
+            
+            # Step 8: Send completion signal with summary
+            yield {
+                "type": "stream_complete",
+                "data": {
+                    "facts_extracted": len(fact_result.facts),
+                    "tasks_created": len(task_result.tasks) if task_result.should_create_tasks else 0,
+                    "user_intent": fact_result.user_intent,
+                    "emotional_state": fact_result.emotional_state,
+                    "suggested_follow_up": fact_result.suggested_follow_up
+                }
+            }
+            
+            print("✅ Enhanced chat stream completed successfully")
+            
+        except Exception as e:
+            print(f"❌ Enhanced chat stream error: {e}")
+            import traceback
+            print(f"🔍 Traceback: {traceback.format_exc()}")
+            
+            yield {
+                "type": "error",
+                "data": {
+                    "message": "I encountered an error while processing your message. Let me try to help you anyway.",
+                    "error_code": "PROCESSING_ERROR"
+                }
+            }
+            
+            # Fallback simple response
+            yield {
+                "type": "token",
+                "data": "I apologize for the technical difficulty. How can I help you with your studies today?"
+            }

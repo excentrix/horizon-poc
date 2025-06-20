@@ -48,37 +48,15 @@ async def chat_stream_endpoint(
     request: Request,
     current_user: User = Depends(get_current_user)
 ):
-    """Stream chat responses with real-time fact extraction and task creation."""
+    """Enhanced streaming chat with real-time fact extraction and task creation."""
     
     try:
-        # Get raw request body for debugging
+        # Parse request (keeping existing validation)
         body = await request.body()
-        print(f"📝 Raw request body: {body.decode()}")
+        request_data = json.loads(body.decode())
+        chat_request = ChatRequest(**request_data)
         
-        # Parse JSON manually with better error handling
-        try:
-            request_data = json.loads(body.decode())
-            print(f"📋 Parsed request data: {request_data}")
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON decode error: {e}")
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid JSON in request body: {str(e)}"
-            )
-        
-        # Validate request data
-        try:
-            chat_request = ChatRequest(**request_data)
-            print(f"✅ Valid chat request: {chat_request}")
-        except ValidationError as e:
-            print(f"❌ Validation error: {e}")
-            raise HTTPException(
-                status_code=422, 
-                detail={
-                    "message": "Invalid request data",
-                    "errors": e.errors()
-                }
-            )
+        print(f"🚀 Enhanced chat request from {current_user.email}")
         
         # Check if chat chain is available
         if chat_chain is None:
@@ -87,41 +65,26 @@ async def chat_stream_endpoint(
                 detail="Chat service is not available. Please check Azure OpenAI configuration."
             )
         
-        print(f"👤 Current user: {current_user.email} (ID: {current_user.id})")
-        
         # Get or create session
         session = None
         if chat_request.session_id:
-            print(f"🔍 Looking for session: {chat_request.session_id}")
-            # Validate session belongs to current user
             user_sessions = DatabaseService.get_user_sessions(current_user.id, limit=100)
             session = next((s for s in user_sessions if s.id == chat_request.session_id), None)
             
             if not session:
-                print(f"❌ Session not found: {chat_request.session_id}")
                 raise HTTPException(status_code=404, detail="Session not found")
-            else:
-                print(f"✅ Found session: {session.title}")
         
         if not session:
-            print("📝 Creating new session")
             session = DatabaseService.create_chat_session(current_user.id)
-            print(f"✅ Created session: {session.id}")
         
         # Store user message
-        print(f"💬 Storing user message: {chat_request.message[:50]}...")
-        try:
-            user_message = DatabaseService.add_message(
-                session.id, 
-                chat_request.message, 
-                is_user=True
-            )
-            print(f"✅ Stored user message: {user_message.id}")
-        except Exception as e:
-            print(f"❌ Failed to store user message: {e}")
-            # Continue without storing for now
+        user_message = DatabaseService.add_message(
+            session.id, 
+            chat_request.message, 
+            is_user=True
+        )
         
-        # Build user context
+        # Build enhanced user context
         user_context = {
             "name": current_user.name,
             "email": current_user.email,
@@ -133,49 +96,89 @@ async def chat_stream_endpoint(
             "skills": json.loads(current_user.skills) if current_user.skills else [],
             "gpa": current_user.gpa
         }
-        print(f"👤 User context prepared: {user_context}")
         
-        async def generate_response():
+        # Get conversation history (last 10 messages)
+        try:
+            with Session(engine) as db_session:
+                messages = db_session.exec(
+                    select(ChatMessage)
+                    .where(ChatMessage.session_id == session.id)
+                    .order_by(ChatMessage.created_at.desc())
+                    .limit(10)
+                ).all()
+                
+                conversation_history = [
+                    {
+                        "content": msg.content,
+                        "is_user": msg.is_user,
+                        "timestamp": msg.created_at.isoformat()
+                    }
+                    for msg in reversed(messages)  # Reverse to get chronological order
+                ]
+        except Exception as e:
+            print(f"⚠️ Error fetching conversation history: {e}")
+            conversation_history = []
+        
+        print(f"📚 Context: {len(conversation_history)} messages, profile completeness: {sum(1 for v in user_context.values() if v) / len(user_context):.1%}")
+        
+        async def generate_enhanced_response():
             ai_response_content = ""
+            facts_updated = False
+            tasks_created = []
             
             try:
-                print("🤖 Starting AI response generation...")
-                
                 async for chunk in chat_chain.chat_stream(
                     chat_request.message,
                     user_context=user_context,
-                    conversation_history=[]  # TODO: Implement history retrieval
+                    conversation_history=conversation_history
                 ):
-                    yield f"data: {json.dumps(chunk)}\n\n"
+                    # Handle different chunk types
+                    chunk_type = chunk.get("type")
                     
-                    # Collect AI response content
-                    if chunk.get("type") == "token":
+                    if chunk_type == "token":
                         ai_response_content += chunk.get("data", "")
+                        yield f"data: {json.dumps(chunk)}\n\n"
                     
-                    # Handle fact updates
-                    elif chunk.get("type") == "facts_update":
+                    elif chunk_type == "facts_update":
                         facts = chunk.get("data", {})
-                        facts = {k: v for k, v in facts.items() if v is not None}
                         if facts:
                             try:
-                                DatabaseService.update_user_profile(current_user.id, **facts)
-                                print(f"✅ Updated user profile with facts: {list(facts.keys())}")
+                                # Update user profile in database
+                                updated_user = DatabaseService.update_user_profile(current_user.id, **facts)
+                                if updated_user:
+                                    facts_updated = True
+                                    print(f"✅ Updated profile: {list(facts.keys())}")
+                                yield f"data: {json.dumps(chunk)}\n\n"
                             except Exception as e:
                                 print(f"❌ Failed to update user profile: {e}")
                     
-                    # Handle task creation
-                    elif chunk.get("type") == "task_created":
+                    elif chunk_type == "fact_discovery":
+                        # Send visual feedback for fact discovery
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    
+                    elif chunk_type == "task_created":
                         task_data = chunk.get("data", {})
                         try:
+                            # Create task in database
+                            due_date = None
+                            if task_data.get("due_date"):
+                                due_date = datetime.fromisoformat(task_data["due_date"].replace('Z', '+00:00'))
+                            
                             task = DatabaseService.create_task(
                                 current_user.id,
                                 title=task_data.get("title", "Untitled Task"),
                                 description=task_data.get("description"),
+                                due_date=due_date,
                                 created_by_ai=True
                             )
+                            tasks_created.append(task)
                             print(f"✅ Created task: {task.title}")
+                            yield f"data: {json.dumps(chunk)}\n\n"
                         except Exception as e:
                             print(f"❌ Failed to create task: {e}")
+                    
+                    elif chunk_type in ["processing_update", "stream_complete", "error"]:
+                        yield f"data: {json.dumps(chunk)}\n\n"
                     
                     await asyncio.sleep(0.01)
                 
@@ -186,37 +189,42 @@ async def chat_stream_endpoint(
                             session.id,
                             ai_response_content,
                             is_user=False,
-                            metadata={"session_id": str(session.id)}
+                            meta={
+                                "session_id": str(session.id),
+                                "facts_updated": facts_updated,
+                                "tasks_created": len(tasks_created)
+                            }
                         )
-                        print(f"✅ Stored AI response: {ai_message.id}")
+                        print(f"✅ Stored enhanced AI response")
                     except Exception as e:
                         print(f"❌ Failed to store AI message: {e}")
                 
-                # Send completion signal
+                # Send final completion signal
                 completion_data = {
-                    'type': 'stream_end', 
+                    'type': 'stream_end',
                     'session_id': str(session.id),
-                    'message_count': len(ai_response_content)
+                    'enhanced_features': {
+                        'facts_updated': facts_updated,
+                        'tasks_created': len(tasks_created),
+                        'response_length': len(ai_response_content)
+                    }
                 }
                 yield f"data: {json.dumps(completion_data)}\n\n"
-                print("✅ Stream completed successfully")
+                print("✅ Enhanced stream completed successfully")
                 
             except Exception as e:
-                print(f"❌ Stream generation error: {e}")
-                print(f"🔍 Traceback: {traceback.format_exc()}")
-                
+                print(f"❌ Enhanced stream generation error: {e}")
                 error_response = {
                     "type": "error",
                     "data": {
-                        "message": "I apologize, but I encountered an error while processing your message. Please try again.",
-                        "error_code": "STREAM_ERROR",
-                        "details": str(e) if os.getenv("ENV") == "development" else None
+                        "message": "I encountered an error while processing your message. Please try again.",
+                        "error_code": "ENHANCED_STREAM_ERROR"
                     }
                 }
                 yield f"data: {json.dumps(error_response)}\n\n"
         
         return StreamingResponse(
-            generate_response(),
+            generate_enhanced_response(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -228,19 +236,14 @@ async def chat_stream_endpoint(
         )
         
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        # Log unexpected errors
-        print(f"❌ Unexpected chat endpoint error: {e}")
-        print(f"🔍 Traceback: {traceback.format_exc()}")
-        
+        print(f"❌ Enhanced chat endpoint error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
-                "message": "An unexpected error occurred while processing your chat request.",
-                "error_code": "CHAT_ERROR",
-                "details": str(e) if os.getenv("ENV") == "development" else None
+                "message": "An unexpected error occurred while processing your enhanced chat request.",
+                "error_code": "ENHANCED_CHAT_ERROR"
             }
         )
 

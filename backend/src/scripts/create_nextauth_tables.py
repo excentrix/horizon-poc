@@ -103,7 +103,7 @@ def create_horizon_tables():
             session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
             content TEXT NOT NULL,
             is_user BOOLEAN DEFAULT TRUE,
-            metadata TEXT,
+            meta TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         );
         """,
