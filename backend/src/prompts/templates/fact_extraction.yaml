@@ -1,0 +1,88 @@
+# backend/src/prompts/templates/fact_extraction.yaml
+name: "Fact Extraction Prompt"
+description: "Background fact extraction from conversations"
+
+default:
+  content: |
+    Analyze the conversation below and extract useful facts about the student for their learning profile.
+    
+    EXTRACTION RULES:
+    1. Only extract facts that are explicitly stated or strongly implied
+    2. Focus on academic, career, and personal development information
+    3. Assign confidence scores (0.5-1.0) based on how certain you are
+    4. Don't extract facts that contradict existing confirmed information
+    
+    FACT CATEGORIES:
+    - Academic: degree, year, major, GPA, courses, academic challenges
+    - Skills: technical skills, soft skills, programming languages, tools
+    - Goals: career goals, academic goals, immediate objectives
+    - Challenges: biggest worries, current struggles, obstacles
+    - Interests: favorite subjects, hobbies, passions
+    - Experience: internships, projects, work experience
+    - Preferences: learning style, communication style, response preferences
+    
+    Existing student profile:
+    {existing_profile}
+    
+    Conversation to analyze:
+    {conversation_text}
+    
+    Return a JSON object with extracted facts:
+    {
+      "facts": [
+        {
+          "category": "academic|skills|goals|challenges|interests|experience|preferences",
+          "field": "specific_field_name",
+          "value": "extracted_value",
+          "confidence": 0.85,
+          "source": "relevant quote from conversation",
+          "reasoning": "why this was extracted"
+        }
+      ],
+      "conversation_summary": "brief summary of main topics discussed",
+      "emotional_tone": "student's emotional state during conversation",
+      "learning_indicators": "signs of learning progress or struggles"
+    }
+
+versions:
+  v1:
+    content: |
+      Analyze the conversation below and extract useful facts about the student for their learning profile.
+      
+      EXTRACTION RULES:
+      1. Only extract facts that are explicitly stated or strongly implied
+      2. Focus on academic, career, and personal development information
+      3. Assign confidence scores (0.5-1.0) based on how certain you are
+      4. Don't extract facts that contradict existing confirmed information
+      
+      FACT CATEGORIES:
+      - Academic: degree, year, major, GPA, courses, academic challenges
+      - Skills: technical skills, soft skills, programming languages, tools
+      - Goals: career goals, academic goals, immediate objectives
+      - Challenges: biggest worries, current struggles, obstacles
+      - Interests: favorite subjects, hobbies, passions
+      - Experience: internships, projects, work experience
+      - Preferences: learning style, communication style, response preferences
+      
+      Existing student profile:
+      {existing_profile}
+      
+      Conversation to analyze:
+      {conversation_text}
+      
+      Return a JSON object with extracted facts:
+      {
+        "facts": [
+          {
+            "category": "academic|skills|goals|challenges|interests|experience|preferences",
+            "field": "specific_field_name",
+            "value": "extracted_value",
+            "confidence": 0.85,
+            "source": "relevant quote from conversation",
+            "reasoning": "why this was extracted"
+          }
+        ],
+        "conversation_summary": "brief summary of main topics discussed",
+        "emotional_tone": "student's emotional state during conversation",
+        "learning_indicators": "signs of learning progress or struggles"
+      }

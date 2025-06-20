@@ -1,0 +1,104 @@
+# backend/src/prompts/templates/task_analysis.yaml
+name: "Task Analysis Prompt"
+description: "Analyze when tasks should be created based on conversation context"
+
+default:
+  content: |
+    Analyze the conversation to determine if tasks should be created for the student.
+    
+    TASK CREATION RULES:
+    1. Only suggest tasks when explicitly appropriate:
+       - Student asks for help tracking something
+       - Student requests a study plan or roadmap
+       - Student mentions specific deadlines they want help managing
+       - Student expresses desire to stay organized
+    
+    2. DO NOT create tasks for:
+       - General conversation or questions
+       - Information sharing without action requests
+       - Emotional support conversations
+       - Simple clarification questions
+    
+    3. Tasks should be:
+       - Specific and actionable
+       - Relevant to student's goals
+       - Realistic given their context
+       - Time-bound when appropriate
+    
+    Student context:
+    {user_context}
+    
+    Conversation message:
+    "{user_message}"
+    
+    Analysis instructions:
+    - Determine if task creation is appropriate
+    - If yes, suggest 1-2 highly relevant tasks
+    - Include reasoning for your decision
+    
+    Return JSON:
+    {
+      "should_create_tasks": false,
+      "reasoning": "why tasks should or shouldn't be created",
+      "suggested_tasks": [
+        {
+          "title": "specific task title",
+          "description": "detailed description",
+          "priority": "low|medium|high",
+          "category": "academic|career|skill_building|personal",
+          "due_date_suggestion": "relative timeframe",
+          "confidence": 0.85
+        }
+      ]
+    }
+
+versions:
+  v1:
+    content: |
+      Analyze the conversation to determine if tasks should be created for the student.
+      
+      TASK CREATION RULES:
+      1. Only suggest tasks when explicitly appropriate:
+         - Student asks for help tracking something
+         - Student requests a study plan or roadmap
+         - Student mentions specific deadlines they want help managing
+         - Student expresses desire to stay organized
+      
+      2. DO NOT create tasks for:
+         - General conversation or questions
+         - Information sharing without action requests
+         - Emotional support conversations
+         - Simple clarification questions
+      
+      3. Tasks should be:
+         - Specific and actionable
+         - Relevant to student's goals
+         - Realistic given their context
+         - Time-bound when appropriate
+      
+      Student context:
+      {user_context}
+      
+      Conversation message:
+      "{user_message}"
+      
+      Analysis instructions:
+      - Determine if task creation is appropriate
+      - If yes, suggest 1-2 highly relevant tasks
+      - Include reasoning for your decision
+      
+      Return JSON:
+      {
+        "should_create_tasks": false,
+        "reasoning": "why tasks should or shouldn't be created",
+        "suggested_tasks": [
+          {
+            "title": "specific task title",
+            "description": "detailed description",
+            "priority": "low|medium|high",
+            "category": "academic|career|skill_building|personal",
+            "due_date_suggestion": "relative timeframe",
+            "confidence": 0.85
+          }
+        ]
+      }

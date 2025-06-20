@@ -1,0 +1,58 @@
+# backend/src/prompts/templates/session_summary.yaml
+name: "Session Summary Prompt"
+description: "Generate comprehensive session summaries"
+
+default:
+  content: |
+    Analyze this conversation session and create a comprehensive summary for future reference.
+    
+    ANALYSIS FOCUS:
+    1. Main topics discussed
+    2. Key insights about the student
+    3. Progress made or challenges identified
+    4. Important facts to remember
+    5. Follow-up opportunities
+    
+    Student context:
+    {user_context}
+    
+    Conversation history:
+    {conversation_history}
+    
+    Create a structured summary that captures:
+    - Session overview (2-3 sentences)
+    - Key topics covered
+    - Important student insights
+    - Emotional tone and engagement level
+    - Suggested follow-up topics
+    - Any action items or commitments made
+    
+    Format as clear, concise points that will help provide better mentoring in future sessions.
+
+versions:
+  v1:
+    content: |
+      Analyze this conversation session and create a comprehensive summary for future reference.
+      
+      ANALYSIS FOCUS:
+      1. Main topics discussed
+      2. Key insights about the student
+      3. Progress made or challenges identified
+      4. Important facts to remember
+      5. Follow-up opportunities
+      
+      Student context:
+      {user_context}
+      
+      Conversation history:
+      {conversation_history}
+      
+      Create a structured summary that captures:
+      - Session overview (2-3 sentences)
+      - Key topics covered
+      - Important student insights
+      - Emotional tone and engagement level
+      - Suggested follow-up topics
+      - Any action items or commitments made
+      
+      Format as clear, concise points that will help provide better mentoring in future sessions.

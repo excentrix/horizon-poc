@@ -1,4 +1,4 @@
-// frontend/src/components/chat/chat-area.tsx (add test button temporarily)
+// frontend/src/components/chat/chat-area.tsx (update imports and usage)
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -6,11 +6,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ChatBubble } from "./chat-bubble";
 import { ChatInput } from "./chat-input";
 import { TypingIndicator } from "./typing-indicator";
-import { useChatStream } from "@/hooks/use-chat-stream";
-import { AlertTriangle, LogOut, TestTube } from "lucide-react";
+import { useChatStreamV2 } from "@/hooks/use-chat-stream-v2"; // Changed to v2
+import { AlertTriangle, LogOut, TestTube, Zap } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 
 interface Message {
@@ -30,19 +31,19 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
     {
       id: "1",
       content:
-        "Hello! I'm Horizon, your AI learning mentor. I'm here to help you with your academic journey, career planning, and personal growth. What would you like to talk about today?",
+        "Hello! I'm Horizon, your enhanced AI learning mentor. I now have improved memory and can provide more personalized guidance. What would you like to talk about today?",
       isUser: false,
       timestamp: new Date(),
     },
   ]);
 
   const [error, setError] = useState<string | null>(null);
-  const { sendMessage, isStreaming, currentResponse } = useChatStream();
+  const { sendMessage, isStreaming, currentResponse } = useChatStreamV2(); // Using v2
   const { data: session } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Test function for debugging
-  const testConnection = async () => {
+  // Test v2 connection
+  const testV2Connection = async () => {
     if (!session?.user?.id) {
       setError("Not authenticated");
       return;
@@ -50,7 +51,7 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/chat/test`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v2/test`,
         {
           method: "POST",
           headers: {
@@ -63,23 +64,24 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
               })
             )}`,
           },
-          body: JSON.stringify({ message: "Test connection" }),
         }
       );
 
       if (response.ok) {
         const result = await response.json();
-        console.log("✅ Test connection successful:", result);
+        console.log("✅ v2 Test successful:", result);
         setError(null);
-        alert(`Test successful! Response: ${JSON.stringify(result, null, 2)}`);
+        alert(
+          `v2 System Working! Features: ${JSON.stringify(result, null, 2)}`
+        );
       } else {
         const errorText = await response.text();
-        console.error("❌ Test connection failed:", errorText);
-        setError(`Test failed: ${response.status} ${response.statusText}`);
+        console.error("❌ v2 Test failed:", errorText);
+        setError(`v2 Test failed: ${response.status}`);
       }
     } catch (error) {
-      console.error("❌ Test connection error:", error);
-      setError(`Test error: ${error}`);
+      console.error("❌ v2 Test error:", error);
+      setError(`v2 Test error: ${error}`);
     }
   };
 
@@ -96,23 +98,12 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
     setMessages((prev) => [...prev, userMessage]);
 
     try {
-      await sendMessage(
-        content,
-        sessionId,
-        (aiMessage) => {
-          setMessages((prev) => [...prev, aiMessage]);
-        },
-        (task) => {
-          console.log("Task created:", task);
-        }
-      );
+      await sendMessage(content, sessionId, (aiMessage) => {
+        setMessages((prev) => [...prev, aiMessage]);
+      });
     } catch (error) {
-      console.error("❌ Send message error:", error);
-      if (error instanceof Error && error.message.includes("Authentication")) {
-        setError("Authentication failed. Please sign in again.");
-      } else {
-        setError(error instanceof Error ? error.message : "An error occurred");
-      }
+      console.error("❌ v2 Send message error:", error);
+      setError(error instanceof Error ? error.message : "An error occurred");
     }
   };
 
@@ -120,7 +111,6 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
     signOut({ callbackUrl: "/auth/signin" });
   };
 
-  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -129,19 +119,30 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header with Sign Out and Test Button */}
+      {/* Header with v2 indicator */}
       <div className="border-b border-gray2/20 p-4 flex justify-between items-center">
-        <h1 className="text-lg font-semibold text-white">Horizon AI Mentor</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-white">
+            Horizon AI Mentor
+          </h1>
+          <Badge
+            variant="secondary"
+            className="bg-green-900/20 text-green-400 border-green-500/30"
+          >
+            <Zap className="h-3 w-3 mr-1" />
+            Enhanced v2
+          </Badge>
+        </div>
         <div className="flex gap-2">
           {process.env.NODE_ENV === "development" && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={testConnection}
+              onClick={testV2Connection}
               className="text-blue-400 hover:text-blue-300"
             >
               <TestTube className="h-4 w-4 mr-2" />
-              Test
+              Test v2
             </Button>
           )}
           <Button
@@ -162,23 +163,25 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
             <details>
-              <summary className="cursor-pointer">Error Details</summary>
+              <summary className="cursor-pointer">v2 System Error</summary>
               <pre className="mt-2 text-xs overflow-auto">{error}</pre>
             </details>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Session Info for Debugging */}
+      {/* Debug Info */}
       {process.env.NODE_ENV === "development" && session && (
-        <div className="bg-blue-900/20 p-2 m-4 rounded text-xs text-blue-200">
-          <strong>Debug Info:</strong>
+        <div className="bg-green-900/20 p-2 m-4 rounded text-xs text-green-200">
+          <strong>v2 System Active:</strong>
           <br />
-          User ID: {session?.user?.id}
+          API: /api/v2/chat/stream
           <br />
-          Email: {session?.user?.email}
+          User: {session.user.email}
           <br />
-          Session ID: {sessionId || "None"}
+          Session: {sessionId || "None"}
+          <br />
+          Features: Enhanced Memory, Agent-based, Prompt Management
         </div>
       )}
 
@@ -216,7 +219,11 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
 
       {/* Chat Input */}
       <div className="border-t border-gray2/20 p-4">
-        <ChatInput onSendMessage={handleSendMessage} disabled={isStreaming} />
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          disabled={isStreaming}
+        //   placeholder="Message Horizon (Enhanced v2)..."
+        />
       </div>
     </div>
   );

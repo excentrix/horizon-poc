@@ -10,6 +10,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from models.core import create_db_and_tables
 from api.chat import router as chat_router
+from api.chat_v2 import router as chat_v2_router
 
 # Initialize Sentry only if DSN is properly configured
 def init_sentry():
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Horizon API",
     description="AI-powered adaptive learning platform with real-time chat",
-    version="0.2.0",
+    version="0.1.2",
     lifespan=lifespan,
     # Add more metadata
     contact={
@@ -99,6 +100,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat_router)
+app.include_router(chat_v2_router)  
 
 @app.get("/health")
 async def health_check():
@@ -112,6 +114,13 @@ async def health_check():
             "ai_enabled": bool(os.getenv("AZURE_OPENAI_ENDPOINT")),
             "database_connected": bool(os.getenv("NEON_DATABASE_URL") or os.getenv("DATABASE_URL")),
             "sentry_enabled": sentry_enabled,
+            "agentic": True,
+            "enhanced_memory": True,
+            "background_processing": False
+        },
+         "apis": {
+            "v1": "/api/chat/*",
+            "v2": "/api/v2/chat/*"
         },
         "timestamp": "2025-01-24T12:00:00Z"  # Will be replaced with actual timestamp
     }
@@ -132,7 +141,11 @@ async def root():
             "docs": "/docs",
             "health": "/health",
             "chat": "/api/chat/stream"
-        }
+        },
+         "apis": {
+            "v1": "/api/chat/*",
+            "v2": "/api/v2/chat/*"
+        },
     }
 
 @app.exception_handler(Exception)
