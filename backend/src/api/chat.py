@@ -328,7 +328,7 @@ async def get_user_facts(current_user: User = Depends(get_current_user)):
                 {
                     "id": str(sess.id),
                     "title": sess.title,
-                    "summary": sess.summary or f"Conversation from {sess.created_at.strftime('%b %d')}",
+                    "summary": sess.summary or f"{sess.created_at.strftime('%b %d')}",
                     "created_at": sess.created_at.isoformat(),
                     "updated_at": sess.updated_at.isoformat()
                 }
