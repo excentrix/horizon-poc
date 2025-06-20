@@ -1,15 +1,17 @@
-// frontend/src/components/chat/chat-area.tsx
+// frontend/src/components/chat/chat-area.tsx (add test button temporarily)
 "use client";
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { ChatBubble } from "./chat-bubble";
 import { ChatInput } from "./chat-input";
 import { TypingIndicator } from "./typing-indicator";
 import { useChatStream } from "@/hooks/use-chat-stream";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, LogOut, TestTube } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
 
 interface Message {
   id: string;
@@ -21,14 +23,9 @@ interface Message {
 interface ChatAreaProps {
   sessionId: string | null;
   onSessionChange: (sessionId: string) => void;
-  userEmail: string;
 }
 
-export function ChatArea({
-  sessionId,
-  onSessionChange,
-  userEmail,
-}: ChatAreaProps) {
+export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -41,7 +38,50 @@ export function ChatArea({
 
   const [error, setError] = useState<string | null>(null);
   const { sendMessage, isStreaming, currentResponse } = useChatStream();
+  const { data: session } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Test function for debugging
+  const testConnection = async () => {
+    if (!session?.user?.id) {
+      setError("Not authenticated");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/chat/test`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${btoa(
+              JSON.stringify({
+                email: session.user.email,
+                id: session.user.id,
+                name: session.user.name,
+              })
+            )}`,
+          },
+          body: JSON.stringify({ message: "Test connection" }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Test connection successful:", result);
+        setError(null);
+        alert(`Test successful! Response: ${JSON.stringify(result, null, 2)}`);
+      } else {
+        const errorText = await response.text();
+        console.error("❌ Test connection failed:", errorText);
+        setError(`Test failed: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error("❌ Test connection error:", error);
+      setError(`Test error: ${error}`);
+    }
+  };
 
   const handleSendMessage = async (content: string) => {
     setError(null);
@@ -59,7 +99,6 @@ export function ChatArea({
       await sendMessage(
         content,
         sessionId,
-        userEmail,
         (aiMessage) => {
           setMessages((prev) => [...prev, aiMessage]);
         },
@@ -68,8 +107,17 @@ export function ChatArea({
         }
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+      console.error("❌ Send message error:", error);
+      if (error instanceof Error && error.message.includes("Authentication")) {
+        setError("Authentication failed. Please sign in again.");
+      } else {
+        setError(error instanceof Error ? error.message : "An error occurred");
+      }
     }
+  };
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: "/auth/signin" });
   };
 
   // Auto-scroll to bottom
@@ -80,13 +128,58 @@ export function ChatArea({
   }, [messages, currentResponse]);
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto scroll-auto">
+    <div className="flex flex-col h-full">
+      {/* Header with Sign Out and Test Button */}
+      <div className="border-b border-gray2/20 p-4 flex justify-between items-center">
+        <h1 className="text-lg font-semibold text-white">Horizon AI Mentor</h1>
+        <div className="flex gap-2">
+          {process.env.NODE_ENV === "development" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={testConnection}
+              className="text-blue-400 hover:text-blue-300"
+            >
+              <TestTube className="h-4 w-4 mr-2" />
+              Test
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSignOut}
+            className="text-gray1 hover:text-white"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
+        </div>
+      </div>
+
       {/* Error Alert */}
       {error && (
         <Alert variant="destructive" className="m-4 mb-0">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <details>
+              <summary className="cursor-pointer">Error Details</summary>
+              <pre className="mt-2 text-xs overflow-auto">{error}</pre>
+            </details>
+          </AlertDescription>
         </Alert>
+      )}
+
+      {/* Session Info for Debugging */}
+      {process.env.NODE_ENV === "development" && session && (
+        <div className="bg-blue-900/20 p-2 m-4 rounded text-xs text-blue-200">
+          <strong>Debug Info:</strong>
+          <br />
+          User ID: {session?.user?.id}
+          <br />
+          Email: {session?.user?.email}
+          <br />
+          Session ID: {sessionId || "None"}
+        </div>
       )}
 
       {/* Chat Messages */}

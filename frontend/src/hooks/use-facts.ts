@@ -2,24 +2,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
+import { useAuthenticatedAPI } from "./use-auth-api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export function useFacts() {
+  const { authenticatedAxios, isAuthenticated } = useAuthenticatedAPI();
 
-export function useFacts(userEmail: string = "demo@horizon.ai") {
   return useQuery({
-    queryKey: ["facts", userEmail],
+    queryKey: ["facts"],
     queryFn: async () => {
       try {
-        const response = await axios.get(`${API_BASE}/api/facts`, {
-          params: {
-            user_email: userEmail,
-          },
-        });
+        const response = await authenticatedAxios.get("/api/facts");
         return response.data;
       } catch (error) {
         console.error("Facts API error:", error);
-        // Return empty data structure on error
         return {
           profile: {},
           tasks: [],
@@ -27,9 +22,9 @@ export function useFacts(userEmail: string = "demo@horizon.ai") {
         };
       }
     },
-    staleTime: 5 * 1000, // 5 seconds
-    refetchInterval: 30 * 1000, // Auto-refresh every 30s
+    enabled: isAuthenticated, // Only run if user is authenticated
+    staleTime: 5 * 1000,
+    refetchInterval: 30 * 1000,
     retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 }

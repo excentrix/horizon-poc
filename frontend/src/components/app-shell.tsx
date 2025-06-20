@@ -8,14 +8,13 @@ import { UserInfoPanel } from "./panels/user-info-panel";
 import { SessionsPanel } from "./panels/sessions-panel";
 import { ErrorBoundary } from "./error-boundary";
 import { useFacts } from "@/hooks/use-facts";
+import { useSession } from "next-auth/react";
 
 export function AppShell() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
-  // TODO: Replace with actual user email from auth context
-  const userEmail = "demo@horizon.ai";
-
-  const { data: facts, isLoading, error } = useFacts(userEmail);
+  const { data: session } = useSession();
+  const { data: facts, isLoading, error } = useFacts();
 
   return (
     <div className="h-screen bg-dark text-white">
@@ -33,7 +32,6 @@ export function AppShell() {
             <ChatArea
               sessionId={currentSessionId}
               onSessionChange={setCurrentSessionId}
-              userEmail={userEmail}
             />
           </ErrorBoundary>
         </div>

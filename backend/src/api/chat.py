@@ -1,31 +1,34 @@
-# backend/src/api/chat.py
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form , Query
+# backend/src/api/chat.py (update with better error handling)
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from typing import Optional, List, Dict, Any
 import json
 import asyncio
-from uuid import UUID
-import uuid
-import sentry_sdk
-from sqlalchemy.orm import Session  # Import Session from SQLAlchemy
+import traceback
+import os
+from datetime import datetime
 
-# Enable or disable Sentry error tracking
-sentry_enabled = False  # Set to True if Sentry is configured
-
-from models.core import DatabaseService, get_session, User, ChatSession, Task, engine
+from models.core import DatabaseService, get_session, User, ChatSession, Task, Session, engine
 from chains.horizon_chat import HorizonChatChain
+from auth.dependencies import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=2000)
-    session_id: Optional[str] = None
-    user_email: str  # Temporary until auth is implemented
+    message: str = Field(..., min_length=1, max_length=2000, description="User message")
+    session_id: Optional[str] = Field(None, description="Chat session ID")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "message": "Hello, can you help me with my studies?",
+                "session_id": None
+            }
+        }
 
 class CreateSessionRequest(BaseModel):
-    user_email: str
-    title: Optional[str] = "New Conversation"
+    title: Optional[str] = Field("New Conversation", description="Session title")
 
 class FactsResponse(BaseModel):
     profile: Dict[str, Any]
@@ -33,56 +36,113 @@ class FactsResponse(BaseModel):
     sessions: List[Dict[str, Any]]
 
 # Initialize chat chain
-chat_chain = HorizonChatChain()
+try:
+    chat_chain = HorizonChatChain()
+    print("✅ Chat chain initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize chat chain: {e}")
+    chat_chain = None
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest):
+async def chat_stream_endpoint(
+    request: Request,
+    current_user: User = Depends(get_current_user)
+):
     """Stream chat responses with real-time fact extraction and task creation."""
     
     try:
-        # Get or create user
-        user = DatabaseService.get_user_by_email(request.user_email)
-        if not user:
-            user = DatabaseService.create_user(request.user_email)
+        # Get raw request body for debugging
+        body = await request.body()
+        print(f"📝 Raw request body: {body.decode()}")
+        
+        # Parse JSON manually with better error handling
+        try:
+            request_data = json.loads(body.decode())
+            print(f"📋 Parsed request data: {request_data}")
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON decode error: {e}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid JSON in request body: {str(e)}"
+            )
+        
+        # Validate request data
+        try:
+            chat_request = ChatRequest(**request_data)
+            print(f"✅ Valid chat request: {chat_request}")
+        except ValidationError as e:
+            print(f"❌ Validation error: {e}")
+            raise HTTPException(
+                status_code=422, 
+                detail={
+                    "message": "Invalid request data",
+                    "errors": e.errors()
+                }
+            )
+        
+        # Check if chat chain is available
+        if chat_chain is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Chat service is not available. Please check Azure OpenAI configuration."
+            )
+        
+        print(f"👤 Current user: {current_user.email} (ID: {current_user.id})")
         
         # Get or create session
         session = None
-        if request.session_id:
-            try:
-                session_uuid = UUID(request.session_id)
-                # TODO: Implement session retrieval and validation
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid session ID format")
+        if chat_request.session_id:
+            print(f"🔍 Looking for session: {chat_request.session_id}")
+            # Validate session belongs to current user
+            user_sessions = DatabaseService.get_user_sessions(current_user.id, limit=100)
+            session = next((s for s in user_sessions if s.id == chat_request.session_id), None)
+            
+            if not session:
+                print(f"❌ Session not found: {chat_request.session_id}")
+                raise HTTPException(status_code=404, detail="Session not found")
+            else:
+                print(f"✅ Found session: {session.title}")
         
         if not session:
-            session = DatabaseService.create_chat_session(user.id)
+            print("📝 Creating new session")
+            session = DatabaseService.create_chat_session(current_user.id)
+            print(f"✅ Created session: {session.id}")
         
         # Store user message
-        user_message = DatabaseService.add_message(
-            session.id, 
-            request.message, 
-            is_user=True
-        )
+        print(f"💬 Storing user message: {chat_request.message[:50]}...")
+        try:
+            user_message = DatabaseService.add_message(
+                session.id, 
+                chat_request.message, 
+                is_user=True
+            )
+            print(f"✅ Stored user message: {user_message.id}")
+        except Exception as e:
+            print(f"❌ Failed to store user message: {e}")
+            # Continue without storing for now
         
         # Build user context
         user_context = {
-            "name": user.name,
-            "email": user.email,
-            "degree": user.degree,
-            "year": user.year,
-            "goal": user.goal,
-            "biggest_worry": user.biggest_worry,
-            "fav_subject": user.fav_subject,
-            "skills": json.loads(user.skills) if user.skills else [],
-            "gpa": user.gpa
+            "name": current_user.name,
+            "email": current_user.email,
+            "degree": current_user.degree,
+            "year": current_user.year,
+            "goal": current_user.goal,
+            "biggest_worry": current_user.biggest_worry,
+            "fav_subject": current_user.fav_subject,
+            "skills": json.loads(current_user.skills) if current_user.skills else [],
+            "gpa": current_user.gpa
         }
+        print(f"👤 User context prepared: {user_context}")
         
         async def generate_response():
             ai_response_content = ""
             
             try:
+                print("🤖 Starting AI response generation...")
+                
                 async for chunk in chat_chain.chat_stream(
-                    request.message,
+                    chat_request.message,
                     user_context=user_context,
                     conversation_history=[]  # TODO: Implement history retrieval
                 ):
@@ -98,53 +158,59 @@ async def chat_stream_endpoint(request: ChatRequest):
                         facts = {k: v for k, v in facts.items() if v is not None}
                         if facts:
                             try:
-                                DatabaseService.update_user_profile(user.id, **facts)
+                                DatabaseService.update_user_profile(current_user.id, **facts)
+                                print(f"✅ Updated user profile with facts: {list(facts.keys())}")
                             except Exception as e:
-                                print(f"Failed to update user profile: {e}")
-                                # Continue processing, don't fail the entire stream
+                                print(f"❌ Failed to update user profile: {e}")
                     
                     # Handle task creation
                     elif chunk.get("type") == "task_created":
                         task_data = chunk.get("data", {})
                         try:
-                            DatabaseService.create_task(
-                                user.id,
+                            task = DatabaseService.create_task(
+                                current_user.id,
                                 title=task_data.get("title", "Untitled Task"),
                                 description=task_data.get("description"),
                                 created_by_ai=True
                             )
+                            print(f"✅ Created task: {task.title}")
                         except Exception as e:
-                            print(f"Failed to create task: {e}")
-                            # Continue processing
+                            print(f"❌ Failed to create task: {e}")
                     
                     await asyncio.sleep(0.01)
                 
                 # Store AI response
                 if ai_response_content.strip():
                     try:
-                        DatabaseService.add_message(
+                        ai_message = DatabaseService.add_message(
                             session.id,
                             ai_response_content,
                             is_user=False,
-                            # meta={"session_id": str(session.id)}
+                            metadata={"session_id": str(session.id)}
                         )
+                        print(f"✅ Stored AI response: {ai_message.id}")
                     except Exception as e:
-                        print(f"Failed to store AI message: {e}")
+                        print(f"❌ Failed to store AI message: {e}")
                 
                 # Send completion signal
-                yield f"data: {json.dumps({'type': 'stream_end', 'session_id': str(session.id)})}\n\n"
+                completion_data = {
+                    'type': 'stream_end', 
+                    'session_id': str(session.id),
+                    'message_count': len(ai_response_content)
+                }
+                yield f"data: {json.dumps(completion_data)}\n\n"
+                print("✅ Stream completed successfully")
                 
             except Exception as e:
-                print(f"Stream generation error: {e}")
-                # Log to Sentry if available
-                if sentry_enabled:
-                    sentry_sdk.capture_exception(e)
+                print(f"❌ Stream generation error: {e}")
+                print(f"🔍 Traceback: {traceback.format_exc()}")
                 
                 error_response = {
                     "type": "error",
                     "data": {
                         "message": "I apologize, but I encountered an error while processing your message. Please try again.",
-                        "error_code": "STREAM_ERROR"
+                        "error_code": "STREAM_ERROR",
+                        "details": str(e) if os.getenv("ENV") == "development" else None
                     }
                 }
                 yield f"data: {json.dumps(error_response)}\n\n"
@@ -156,6 +222,8 @@ async def chat_stream_endpoint(request: ChatRequest):
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "*",
             }
         )
         
@@ -164,61 +232,77 @@ async def chat_stream_endpoint(request: ChatRequest):
         raise
     except Exception as e:
         # Log unexpected errors
-        print(f"Unexpected chat endpoint error: {e}")
-        if sentry_enabled:
-            sentry_sdk.capture_exception(e)
+        print(f"❌ Unexpected chat endpoint error: {e}")
+        print(f"🔍 Traceback: {traceback.format_exc()}")
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "message": "An unexpected error occurred while processing your chat request.",
-                "error_code": "CHAT_ERROR"
+                "error_code": "CHAT_ERROR",
+                "details": str(e) if os.getenv("ENV") == "development" else None
             }
         )
 
-@router.post("/chat/session")
-async def create_session(request: CreateSessionRequest):
-    """Create a new chat session."""
-    user = DatabaseService.get_user_by_email(request.user_email)
-    if not user:
-        user = DatabaseService.create_user(request.user_email)
-    
-    session = DatabaseService.create_chat_session(user.id, request.title)
-    
+# Add a simple test endpoint
+@router.post("/chat/test")
+async def test_chat_endpoint(
+    message: str = "Hello",
+    current_user: User = Depends(get_current_user)
+):
+    """Test endpoint to verify authentication and basic functionality."""
     return {
-        "session_id": str(session.id),
-        "title": session.title,
-        "created_at": session.created_at.isoformat()
+        "message": f"Hello {current_user.name or current_user.email}!",
+        "user_id": current_user.id,
+        "received_message": message,
+        "timestamp": datetime.utcnow().isoformat()
     }
 
+# Rest of the endpoints remain the same...
+@router.post("/chat/session")
+async def create_session(
+    request: CreateSessionRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new chat session."""
+    try:
+        session = DatabaseService.create_chat_session(current_user.id, request.title)
+        
+        return {
+            "session_id": str(session.id),
+            "title": session.title,
+            "created_at": session.created_at.isoformat()
+        }
+    except Exception as e:
+        print(f"❌ Failed to create session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create chat session"
+        )
+
 @router.get("/facts")
-async def get_user_facts(user_email: str = Query(..., description="User email address")):
+async def get_user_facts(current_user: User = Depends(get_current_user)):
     """Get user profile, tasks, and session summaries."""
     try:
-        user = DatabaseService.get_user_by_email(user_email)
-        if not user:
-            # Return empty data for new users
-            return FactsResponse(profile={}, tasks=[], sessions=[])
-        
         # Build profile
         profile = {
-            "name": user.name,
-            "email": user.email,
-            "degree": user.degree,
-            "year": user.year,
-            "goal": user.goal,
-            "biggest_worry": user.biggest_worry,
-            "fav_subject": user.fav_subject,
-            "skills": json.loads(user.skills) if user.skills else [],
-            "gpa": user.gpa,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
+            "name": current_user.name,
+            "email": current_user.email,
+            "degree": current_user.degree,
+            "year": current_user.year,
+            "goal": current_user.goal,
+            "biggest_worry": current_user.biggest_worry,
+            "fav_subject": current_user.fav_subject,
+            "skills": json.loads(current_user.skills) if current_user.skills else [],
+            "gpa": current_user.gpa,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None
         }
         
-        # Get tasks using the new method
+        # Get tasks
         tasks = []
         try:
-            user_tasks = DatabaseService.get_user_tasks(user.id, limit=10)
+            user_tasks = DatabaseService.get_user_tasks(current_user.id, limit=10)
             tasks = [
                 {
                     "id": str(task.id),
@@ -234,24 +318,24 @@ async def get_user_facts(user_email: str = Query(..., description="User email ad
                 for task in user_tasks
             ]
         except Exception as e:
-            print(f"Error fetching tasks: {e}")
+            print(f"❌ Error fetching tasks: {e}")
         
-        # Get sessions using the new method
+        # Get sessions
         sessions = []
         try:
-            user_sessions = DatabaseService.get_user_sessions(user.id, limit=5)
+            user_sessions = DatabaseService.get_user_sessions(current_user.id, limit=5)
             sessions = [
                 {
                     "id": str(sess.id),
                     "title": sess.title,
-                    "summary": sess.summary or f"{sess.created_at.strftime('%b %d')}",
+                    "summary": sess.summary or f"Conversation from {sess.created_at.strftime('%b %d')}",
                     "created_at": sess.created_at.isoformat(),
                     "updated_at": sess.updated_at.isoformat()
                 }
                 for sess in user_sessions
             ]
         except Exception as e:
-            print(f"Error fetching sessions: {e}")
+            print(f"❌ Error fetching sessions: {e}")
         
         return FactsResponse(
             profile=profile,
@@ -260,51 +344,8 @@ async def get_user_facts(user_email: str = Query(..., description="User email ad
         )
         
     except Exception as e:
-        print(f"Facts API error: {e}")
+        print(f"❌ Facts API error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch user facts: {str(e)}"
-        )
-
-@router.post("/resume/upload")
-async def upload_resume(
-    file: UploadFile = File(...),
-    user_email: str = Form(...)
-):
-    """Upload and parse resume for profile extraction."""
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
-    
-    try:
-        # Read file content
-        content = await file.read()
-        
-        # TODO: Implement PDF parsing with PyMuPDF
-        # For now, return mock data
-        extracted_data = {
-            "skills": ["Python", "Machine Learning", "Data Analysis"],
-            "degree": "Computer Science",
-            "gpa": 8.5,
-            "experience": ["Internship at Tech Corp", "Project Lead at University"]
-        }
-        
-        # Update user profile
-        user = DatabaseService.get_user_by_email(user_email)
-        if user:
-            DatabaseService.update_user_profile(
-                user.id,
-                skills=json.dumps(extracted_data["skills"]),
-                degree=extracted_data["degree"],
-                gpa=extracted_data["gpa"]
-            )
-        
-        return {
-            "message": "Resume uploaded and parsed successfully",
-            "extracted_data": extracted_data
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Resume processing error: {str(e)}"
         )
