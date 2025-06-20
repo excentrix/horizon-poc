@@ -1,0 +1,15 @@
+{
+  "name": "horizon-poc",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:backend": "cd backend && conda activate ph && python src/main.py",
+    "dev:all": "concurrently \"pnpm dev:backend\" \"pnpm dev:frontend\"",
+    "build": "pnpm --filter frontend build",
+    "lint": "pnpm --filter frontend lint",
+    "test": "echo 'Tests will be added in Phase D'"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
