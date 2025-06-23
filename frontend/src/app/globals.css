@@ -13,7 +13,7 @@
   --color-gray2: #575757;
   --color-dark: #242424;
   --color-black: #000000;
-  
+
   /* shadcn/ui system colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -48,12 +48,27 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  
+
   /* Custom radius values */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: 14px;
   --radius-xl: calc(14px + 4px);
+
+  --button-mint-light: #b0e9f2;
+  --button-mint-medium: #8cd9e5;
+  --button-mint-dark: #68c9d8;
+  --button-mint-darker: #44b9cb;
+
+  --button-lemon-light: #ffea96;
+  --button-lemon-medium: #ffdf6d;
+  --button-lemon-dark: #ffd444;
+  --button-lemon-darker: #ffc91b;
+
+  --button-mist-light: #cceab7;
+  --button-mist-medium: #b9e099;
+  --button-mist-dark: #a6d67b;
+  --button-mist-darker: #93cc5d;
 }
 
 :root {
@@ -126,5 +141,95 @@
   }
   body {
     @apply bg-dark text-white; /* Default to dark theme */
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(0.95);
+  }
+}
+
+@keyframes pulse-ring-staggered {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  30% {
+    opacity: 0.4;
+  }
+  65% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+}
+
+/* Add utility classes for animations */
+@layer utilities {
+  .animate-pulse-ring {
+    animation: pulse-ring 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+  }
+
+  .animate-pulse-dot {
+    animation: pulse-dot 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+  }
+
+  .animate-pulse-ring-staggered {
+    animation: pulse-ring-staggered 3s ease-in-out infinite;
+  }
+}
+
+/* Add custom components */
+@layer components {
+  .concentric-button {
+    @apply relative focus:outline-none transition-transform hover:scale-105;
+  }
+
+  .concentric-button-sm {
+    @apply w-20 h-20;
+  }
+
+  .concentric-button-md {
+    @apply w-32 h-32;
+  }
+
+  .concentric-button-lg {
+    @apply w-64 h-64;
+  }
+
+  .concentric-text-sm {
+    @apply text-xs;
+  }
+
+  .concentric-text-md {
+    @apply text-sm;
+  }
+
+  .concentric-text-lg {
+    @apply text-base;
   }
 }

@@ -177,7 +177,7 @@ export function ChatArea({ sessionId, onSessionChange }: ChatAreaProps) {
           <br />
           API: /api/v2/chat/stream
           <br />
-          User: {session.user.email}
+          User: {session?.user?.email}
           <br />
           Session: {sessionId || "None"}
           <br />
