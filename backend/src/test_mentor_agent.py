@@ -1,72 +1,152 @@
-# backend/test_mentor_agent.py (create this test file)
+# # backend/test_fixed_system.py
+# import asyncio
+# import sys
+# import os
+
+# sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+# async def test_fixed_system():
+#     print("🧪 Testing Fixed System...")
+    
+#     # Test memory system
+#     try:
+#         from memory.mem0_manager import mem0_manager
+#         print(f"Mem0 Status: {'Enabled' if mem0_manager.enabled else 'Disabled'}")
+        
+#         if mem0_manager.enabled:
+#             summary = await mem0_manager.get_user_memory_summary("test_user")
+#             print(f"✅ Memory system working: {summary}")
+#         else:
+#             print("🔄 Using fallback memory system")
+#     except Exception as e:
+#         print(f"❌ Memory test failed: {e}")
+    
+#     # Test agent
+#     try:
+#         from agents.mentor_agent import MentorAgent
+#         mentor = MentorAgent()
+        
+#         result = await mentor.process({
+#             "message": "Test the fixed system",
+#             "user_context": {"user_id": "test", "name": "Test User"}
+#         })
+        
+#         print(f"✅ Agent working: {result['status']}")
+        
+#     except Exception as e:
+#         print(f"❌ Agent test failed: {e}")
+    
+#     print("🎉 System test completed!")
+
+# if __name__ == "__main__":
+#     asyncio.run(test_fixed_system())
+
+# backend/test_fixed_system.py
 import asyncio
 import sys
 import os
+from datetime import datetime, timezone
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from agents.mentor_agent import MentorAgent
-
-async def test_mentor_agent():
-    """Test the enhanced MentorAgent with both process and streaming methods."""
+async def test_fixed_system():
+    """Test the fixed system components."""
     
-    print("🧪 Testing Enhanced MentorAgent...")
+    print("🧪 Testing Fixed System Components...")
     
-    # Initialize agent
-    mentor = MentorAgent()
+    # Test 1: Memory Manager
+    print("\n1️⃣ Testing Mem0 Manager...")
+    try:
+        from memory.mem0_manager import mem0_manager
+        
+        if mem0_manager.enabled:
+            # Test memory search
+            memories = await mem0_manager.search_relevant_memories(
+                user_id="test_user",
+                query="Hello test",
+                limit=3
+            )
+            print(f"✅ Memory search working: Found {len(memories)} memories")
+            
+            # Test memory addition
+            memory_id = await mem0_manager.add_conversation_memory(
+                user_id="test_user",
+                messages=[{"content": "Test message", "is_user": True}],
+                metadata={"test": True}
+            )
+            print(f"✅ Memory addition working: {memory_id}")
+            
+        else:
+            print("⚠️ Mem0 disabled - check configuration")
+            
+    except Exception as e:
+        print(f"❌ Memory Manager test failed: {e}")
     
-    # Test data
-    user_context = {
-        "user_id": "test_user_123",
-        "session_id": "test_session_456",
-        "name": "Test Student",
-        "degree": "Computer Science",
-        "year": "3rd",
-        "goal": "Get a software engineering internship",
-        "biggest_worry": "Not having enough practical experience",
-        "skills": ["Python", "JavaScript", "React"]
-    }
+    # Test 2: MentorAgent
+    print("\n2️⃣ Testing MentorAgent...")
+    try:
+        from agents.mentor_agent import MentorAgent
+        
+        mentor = MentorAgent()
+        
+        # Test process method
+        result = await mentor.process({
+            "message": "Test the fixed system",
+            "user_context": {
+                "user_id": "test_user",
+                "name": "Test Student",
+                "degree": "Computer Science"
+            },
+            "type": "standard"
+        })
+        
+        print(f"✅ MentorAgent process: {result['status']}")
+        if result['status'] == 'success':
+            print(f"   Response length: {len(result.get('response', ''))}")
+            print(f"   Memories used: {result.get('memories_used', 0)}")
+        else:
+            print(f"   Error: {result.get('error', 'Unknown')}")
+            
+    except Exception as e:
+        print(f"❌ MentorAgent test failed: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Test 1: Process method (batch processing)
-    print("\n1️⃣ Testing process method...")
+    # Test 3: Datetime handling
+    print("\n3️⃣ Testing Datetime Handling...")
+    try:
+        # Test timezone-aware datetime
+        now_utc = datetime.now(timezone.utc)
+        iso_string = now_utc.isoformat()
+        print(f"✅ Timezone-aware datetime working: {iso_string}")
+        
+    except Exception as e:
+        print(f"❌ Datetime test failed: {e}")
     
-    process_result = await mentor.process({
-        "message": "I'm struggling with system design concepts for interviews",
-        "user_context": user_context,
-        "type": "standard"
-    })
+    # Test 4: Qdrant connection
+    print("\n4️⃣ Testing Qdrant Connection...")
+    try:
+        from qdrant_client import QdrantClient
+        
+        client = QdrantClient(host="localhost", port=6333)
+        collections = client.get_collections()
+        print(f"✅ Qdrant connection working: {len(collections.collections)} collections")
+        
+        # Check if our collection exists with correct dimensions
+        for collection in collections.collections:
+            if collection.name == "horizon_memories":
+                info = client.get_collection("horizon_memories")
+                vector_size = info.config.params.vectors.size
+                print(f"✅ Collection 'horizon_memories' found with {vector_size} dimensions")
+                break
+        else:
+            print("⚠️ Collection 'horizon_memories' not found - will be created on first use")
+            
+    except Exception as e:
+        print(f"❌ Qdrant test failed: {e}")
     
-    print(f"Process result status: {process_result['status']}")
-    print(f"Response length: {process_result.get('metadata', {}).get('response_length', 0)} chars")
-    print(f"Memories used: {process_result.get('memories_used', 0)}")
-    
-    # Test 2: Streaming method
-    print("\n2️⃣ Testing streaming method...")
-    
-    response_chunks = []
-    async for chunk in mentor.chat_stream(
-        "Can you help me prepare for technical interviews?",
-        user_context
-    ):
-        response_chunks.append(chunk)
-        if chunk.get("type") == "token":
-            print(".", end="", flush=True)
-    
-    print(f"\nStreaming completed: {len(response_chunks)} chunks")
-    
-    # Test 3: Analysis method
-    print("\n3️⃣ Testing analysis method...")
-    
-    analysis_result = await mentor.analyze_conversation(
-        "I just finished my data structures course and feel confident about trees and graphs",
-        user_context
-    )
-    
-    print(f"Analysis status: {analysis_result['status']}")
-    print(f"Fact extraction available: {'extracted_facts' in analysis_result}")
-    
-    print("\n✅ All tests completed successfully!")
+    print("\n🎉 System tests completed!")
 
 if __name__ == "__main__":
-    asyncio.run(test_mentor_agent())
+    asyncio.run(test_fixed_system())

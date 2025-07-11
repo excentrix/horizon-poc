@@ -19,7 +19,7 @@ interface Message {
   timestamp: Date;
 }
 
-export function useChatStreamV2() {
+export function   useChatStreamV2() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentResponse, setCurrentResponse] = useState("");
   const queryClient = useQueryClient();

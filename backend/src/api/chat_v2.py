@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import json
 import asyncio
 from datetime import datetime
+import os
 
 from models.core import DatabaseService, User, ChatSession
 from auth.dependencies import get_current_user

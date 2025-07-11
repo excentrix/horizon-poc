@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Horizon API",
     description="AI-powered adaptive learning platform with real-time chat",
-    version="0.1.2",
+    version="0.1.3",
     lifespan=lifespan,
     # Add more metadata
     contact={
@@ -108,7 +108,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "horizon-api",
-        "version": "0.2.0",
+        "version": "0.1.2",
         "environment": os.getenv("ENV", "development"),
         "features": {
             "ai_enabled": bool(os.getenv("AZURE_OPENAI_ENDPOINT")),
@@ -129,7 +129,7 @@ async def health_check():
 async def root():
     """API root with information."""
     return {
-        "message": "Welcome to Horizon API v0.2",
+        "message": "Welcome to Horizon API v0.1.2",
         "description": "AI-powered adaptive learning platform",
         "features": [
             "Real-time AI chat with streaming",

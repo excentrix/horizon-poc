@@ -7,9 +7,10 @@ import json
 import asyncio
 import traceback
 import os
-from datetime import datetime
+from datetime import datetime, UTC
+from sqlmodel import select
 
-from models.core import DatabaseService, get_session, User, ChatSession, Task, Session, engine
+from models.core import ChatMessage, DatabaseService, get_session, User, ChatSession, Task, Session, engine
 from chains.horizon_chat import HorizonChatChain
 from auth.dependencies import get_current_user, get_current_user_optional
 
@@ -258,7 +259,7 @@ async def test_chat_endpoint(
         "message": f"Hello {current_user.name or current_user.email}!",
         "user_id": current_user.id,
         "received_message": message,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(UTC).isoformat()
     }
 
 # Rest of the endpoints remain the same...
